@@ -1,3 +1,7 @@
+## Known Bugs
+- ios doesn't stop playing at end of duration, it just keeps on going
+- android resets the playableDuration at every pause/play
+
 ## react-native-video
 
 A `<Video>` component for react-native, as seen in
