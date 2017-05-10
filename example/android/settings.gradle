@@ -1,4 +1,4 @@
-rootProject.name = 'VideoPlayer'
+rootProject.name = 'example'
 
 include ':app'
 include ':react-native-video'
