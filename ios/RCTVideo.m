@@ -3,6 +3,8 @@
 #import "RCTBridgeModule.h"
 #import "RCTEventDispatcher.h"
 #import "UIView+React.h"
+#import <Foundation/Foundation.h>
+
 
 static NSString *const statusKeyPath = @"status";
 static NSString *const playbackLikelyToKeepUpKeyPath = @"playbackLikelyToKeepUp";
@@ -16,6 +18,7 @@ static NSString *const playbackRate = @"rate";
   AVPlayerItem *_playerItem;
   BOOL _playerItemObserversSet;
   BOOL _playerBufferEmpty;
+  NSTimer *_timer;
   AVPlayerLayer *_playerLayer;
   AVPlayerViewController *_playerViewController;
   NSURL *_videoURL;
@@ -33,6 +36,7 @@ static NSString *const playbackRate = @"rate";
   BOOL _controls;
   id _timeObserver;
 
+
   /* Keep track of any modifiers, need to be applied after each play */
   float _volume;
   float _rate;
@@ -42,6 +46,7 @@ static NSString *const playbackRate = @"rate";
   BOOL _playbackStalled;
   BOOL _playInBackground;
   BOOL _playWhenInactive;
+  Float64 _lastDuration;
   NSString * _resizeMode;
   BOOL _fullscreenPlayerPresented;
   UIViewController * _presentingViewController;
@@ -51,6 +56,12 @@ static NSString *const playbackRate = @"rate";
 {
   if ((self = [super init])) {
     _eventDispatcher = eventDispatcher;
+    _timer = [NSTimer scheduledTimerWithTimeInterval:0.250
+      target:self
+      selector:@selector(sendPlayableDurationUpdate:)
+      userInfo:nil
+      repeats:YES
+    ];
 
     _playbackRateObserverRegistered = NO;
     _playbackStalled = NO;
@@ -60,6 +71,7 @@ static NSString *const playbackRate = @"rate";
     _pendingSeek = false;
     _pendingSeekTime = 0.0f;
     _lastSeekTime = 0.0f;
+    _lastDuration = 0;
     _progressUpdateInterval = 250;
     _controls = NO;
     _playerBufferEmpty = YES;
@@ -117,7 +129,7 @@ static NSString *const playbackRate = @"rate";
     {
         return [playerItem seekableTimeRanges].firstObject.CMTimeRangeValue;
     }
-    
+
     return (kCMTimeRangeZero);
 }
 
@@ -169,6 +181,20 @@ static NSString *const playbackRate = @"rate";
 
 #pragma mark - Progress
 
+- (void)sendPlayableDurationUpdate:(NSTimer*) timex 
+{
+  Float64 playableDuration = [self calculatePlayableDuration];
+  Float64 lastDuration = _lastDuration;
+  _lastDuration = playableDuration;
+
+  if(playableDuration - lastDuration > 0){
+    self.onReadyForDisplay(@{
+      @"playableDuration": [NSNumber numberWithFloat:playableDuration],
+      @"target": self.reactTag
+    });
+  }
+}
+
 - (void)sendProgressUpdate
 {
    AVPlayerItem *video = [_player currentItem];
@@ -185,9 +211,10 @@ static NSString *const playbackRate = @"rate";
    const Float64 duration = CMTimeGetSeconds(playerDuration);
    const Float64 currentTimeSecs = CMTimeGetSeconds(currentTime);
    if( currentTimeSecs >= 0) {
+      Float64 playableDuration = [self calculatePlayableDuration];
       self.onVideoProgress(@{
                              @"currentTime": [NSNumber numberWithFloat:CMTimeGetSeconds(currentTime)],
-                             @"playableDuration": [self calculatePlayableDuration],
+                             @"playableDuration": [NSNumber numberWithFloat: playableDuration],
                              @"atValue": [NSNumber numberWithLongLong:currentTime.value],
                              @"atTimescale": [NSNumber numberWithInt:currentTime.timescale],
                              @"target": self.reactTag,
@@ -201,7 +228,7 @@ static NSString *const playbackRate = @"rate";
  *
  * \returns The playable duration of the current player item in seconds.
  */
-- (NSNumber *)calculatePlayableDuration
+- (Float64)calculatePlayableDuration
 {
   AVPlayerItem *video = _player.currentItem;
   if (video.status == AVPlayerItemStatusReadyToPlay) {
@@ -215,10 +242,10 @@ static NSString *const playbackRate = @"rate";
     }];
     Float64 playableDuration = CMTimeGetSeconds(CMTimeRangeGetEnd(effectiveTimeRange));
     if (playableDuration > 0) {
-      return [NSNumber numberWithFloat:playableDuration];
+      return playableDuration;
     }
   }
-  return [NSNumber numberWithInteger:0];
+  return 0;
 }
 
 - (void)addPlayerItemObservers
@@ -745,6 +772,7 @@ static NSString *const playbackRate = @"rate";
 
   [self removePlayerTimeObserver];
   [self removePlayerItemObservers];
+  [_timer invalidate];
 
   _eventDispatcher = nil;
   [[NSNotificationCenter defaultCenter] removeObserver:self];
